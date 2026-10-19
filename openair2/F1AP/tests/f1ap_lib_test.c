@@ -302,6 +302,27 @@ static void test_f1ap_setup_request(void)
     free_f1ap_setup_request(&msg);
     f1ap_msg_free(pdu);
   }
+
+  // Served PLMN with only an NPN Support Information extension: no slices
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex(
+        "0001004a000004004e00020001002a0003200e00002c00310000002b002b000000f110123456780000000800f11000000180000700000000012340"
+        "410009c40800004d00270002300000ab000120");
+    f1ap_setup_req_t msg = {0};
+    AssertFatal(decode_f1ap_setup_request(pdu, &msg), "could not decode served PLMN with NPN Support Information\n");
+    AssertFatal(msg.cell[0].info.num_ssi == 0, "unexpected slices: %d\n", msg.cell[0].info.num_ssi);
+    free_f1ap_setup_request(&msg);
+    f1ap_msg_free(pdu);
+  }
+
+  // gNB-DU RRC Version with an unknown extension
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex("0001002000000300ab000ad0000077cc80037d51ad004e00020013002a4005608ad13451");
+    f1ap_setup_req_t msg = {0};
+    AssertFatal(decode_f1ap_setup_request(pdu, &msg), "could not decode RRC Version with unknown extension\n");
+    free_f1ap_setup_request(&msg);
+    f1ap_msg_free(pdu);
+  }
 }
 
 /**
@@ -361,6 +382,17 @@ static void test_f1ap_setup_response(void)
   AssertFatal(ret, "eq_f1ap_setup_response(): copied message doesn't match\n");
   free_f1ap_setup_response(&cp);
   free_f1ap_setup_response(&orig);
+
+  // gNB-CU RRC Version with an unknown extension
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex(
+        "400100400000030003002500000004001f20a22427226377cc700000007600104002030af08a44000000ef00033451de00aa000ad000009f2d0003"
+        "9860af004e000200a2");
+    f1ap_setup_resp_t msg = {0};
+    AssertFatal(decode_f1ap_setup_response(pdu, &msg), "could not decode RRC Version with unknown extension\n");
+    free_f1ap_setup_response(&msg);
+    f1ap_msg_free(pdu);
+  }
 }
 
 /**
