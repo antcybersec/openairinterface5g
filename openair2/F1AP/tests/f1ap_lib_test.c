@@ -2478,6 +2478,77 @@ static void test_f1ap_paging(void)
   printf("%s() successful\n", __func__);
 }
 
+/** @brief Decode an F1AP PDU given in hex, e.g., as captured from a peer */
+static F1AP_F1AP_PDU_t *f1ap_decode_hex(const char *hex)
+{
+  const size_t len = strlen(hex) / 2;
+  uint8_t buf[len];
+  for (size_t i = 0; i < len; i++)
+    AssertFatal(sscanf(&hex[2 * i], "%2hhx", &buf[i]) == 1, "invalid hex string\n");
+  F1AP_F1AP_PDU_t *pdu = NULL;
+  asn_dec_rval_t dec = aper_decode(NULL, &asn_DEF_F1AP_F1AP_PDU, (void **)&pdu, buf, len, 0, 0);
+  AssertFatal(dec.code == RC_OK, "aper_decode() failed\n");
+  return pdu;
+}
+
+/**
+ * @brief Test that malformed messages from a peer are rejected or partially
+ * ignored instead of crashing the decoder (most inputs from the reproducer in #472)
+ */
+static void test_f1ap_malformed_messages(void)
+{
+  // Served Cells To Add item with an unexpected IE ID
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex(
+        "0003003c000002003a002f0000000800290000a22427226377cc700013000af08a0100090f590002710040277dba0000760400002d0a023801f8004e"
+        "000200df");
+    f1ap_gnb_du_configuration_update_t msg = {0};
+    AssertFatal(!decode_f1ap_du_configuration_update(pdu, &msg), "decoded malformed Served Cells To Add item\n");
+    free_f1ap_du_configuration_update(&msg);
+    f1ap_msg_free(pdu);
+  }
+  // Served Cells To Modify item with an unexpected IE ID
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex(
+        "000300809c000002003e00808e00003d00808700a22427226377cc71003f130af08ad134a0036200b2307601000349f7000167080003110000df10"
+        "1aae4e0000816000039c00026a0003780000590000d80003bc0003b700022f00038d0000d9fff4830000a100037e00032100023a00027a00032100"
+        "01000003ae0003d2000110100001ee0001ac00029910233402f6d2000000fb000400dd43cc004e000200b5");
+    f1ap_gnb_du_configuration_update_t msg = {0};
+    AssertFatal(!decode_f1ap_du_configuration_update(pdu, &msg), "decoded malformed Served Cells To Modify item\n");
+    free_f1ap_du_configuration_update(&msg);
+    f1ap_msg_free(pdu);
+  }
+  // Cells Failed to be Activated item with an unexpected IE ID
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex("4004001d0000020001001000007ebf000a00a22427226377cc7030004e00020013");
+    f1ap_gnb_cu_configuration_update_acknowledge_t msg = {0};
+    AssertFatal(!decode_f1ap_cu_configuration_update_acknowledge(pdu, &msg),
+                "decoded malformed Cells Failed to be Activated item\n");
+    free_f1ap_cu_configuration_update_acknowledge(&msg);
+    f1ap_msg_free(pdu);
+  }
+  // gNB-DU Served Cells item with an unexpected IE ID
+  {
+    F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex(
+        "00010048000004004e00020002002a00020001002c00270000004e0021080000011000001e2400000000000100000110410009c40000004d002500"
+        "02300000ab000a80000000c74003000000");
+    f1ap_setup_req_t msg = {0};
+    AssertFatal(!decode_f1ap_setup_request(pdu, &msg), "decoded malformed gNB-DU Served Cells item\n");
+    free_f1ap_setup_request(&msg);
+    f1ap_msg_free(pdu);
+  }
+  // Paging Cell item with an unexpected IE ID
+  {
+    F1AP_F1AP_PDU_t *pdu =
+        f1ap_decode_hex("00120027000003007500020f60007f0007401234567890ab0071000f0000004e00090002f85900001e2400");
+    f1ap_paging_t msg = {0};
+    AssertFatal(!decode_f1ap_paging(&msg, pdu), "decoded malformed Paging Cell item\n");
+    free_f1ap_paging(&msg);
+    f1ap_msg_free(pdu);
+  }
+  printf("%s() successful\n", __func__);
+}
+
 int main()
 {
   test_initial_ul_rrc_message_transfer();
@@ -2523,5 +2594,6 @@ int main()
   test_f1ap_positioning_measurement_failure_indication();
   test_f1ap_positioning_measurement_update();
   test_f1ap_paging();
+  test_f1ap_malformed_messages();
   return 0;
 }

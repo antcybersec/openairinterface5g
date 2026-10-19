@@ -829,9 +829,11 @@ bool decode_f1ap_setup_request(const F1AP_F1AP_PDU_t *pdu, f1ap_setup_req_t *out
         out->cell = calloc_or_fail(out->num_cells_available, sizeof(*out->cell));
         /* Loop over gNB-DU Served Cells Items */
         for (int i = 0; i < out->num_cells_available && i < F1AP_MAX_NB_CELLS; i++) {
-          F1AP_GNB_DU_Served_Cells_Item_t *served_cells_item =
-              &(((F1AP_GNB_DU_Served_Cells_ItemIEs_t *)ie->value.choice.GNB_DU_Served_Cells_List.list.array[i])
-                    ->value.choice.GNB_DU_Served_Cells_Item);
+          const F1AP_GNB_DU_Served_Cells_ItemIEs_t *itie =
+              (F1AP_GNB_DU_Served_Cells_ItemIEs_t *)ie->value.choice.GNB_DU_Served_Cells_List.list.array[i];
+          _EQ_CHECK_LONG(itie->id, F1AP_ProtocolIE_ID_id_GNB_DU_Served_Cells_Item);
+          _EQ_CHECK_INT(itie->value.present, F1AP_GNB_DU_Served_Cells_ItemIEs__value_PR_GNB_DU_Served_Cells_Item);
+          const F1AP_GNB_DU_Served_Cells_Item_t *served_cells_item = &itie->value.choice.GNB_DU_Served_Cells_Item;
           // gNB-DU System Information (O)
           struct F1AP_GNB_DU_System_Information *DUsi = served_cells_item->gNB_DU_System_Information;
           if (DUsi != NULL) {
@@ -1504,9 +1506,11 @@ bool decode_f1ap_du_configuration_update(const F1AP_F1AP_PDU_t *pdu, f1ap_gnb_du
         AssertError(out->num_cells_to_add > 0, return false, "at least 1 cell to add shall to be present");
         out->cell_to_add = calloc_or_fail(out->num_cells_to_add, sizeof(*out->cell_to_add));
         for (int i = 0; i < out->num_cells_to_add && i < F1AP_MAX_NB_CELLS; i++) {
-          F1AP_Served_Cells_To_Add_Item_t *served_cells_item =
-              &((F1AP_Served_Cells_To_Add_ItemIEs_t *)ie->value.choice.Served_Cells_To_Add_List.list.array[i])
-                   ->value.choice.Served_Cells_To_Add_Item;
+          const F1AP_Served_Cells_To_Add_ItemIEs_t *itie =
+              (F1AP_Served_Cells_To_Add_ItemIEs_t *)ie->value.choice.Served_Cells_To_Add_List.list.array[i];
+          _EQ_CHECK_LONG(itie->id, F1AP_ProtocolIE_ID_id_Served_Cells_To_Add_Item);
+          _EQ_CHECK_INT(itie->value.present, F1AP_Served_Cells_To_Add_ItemIEs__value_PR_Served_Cells_To_Add_Item);
+          const F1AP_Served_Cells_To_Add_Item_t *served_cells_item = &itie->value.choice.Served_Cells_To_Add_Item;
           /* Served Cell Information (M) */
           if (!decode_served_cell_info(&served_cells_item->served_Cell_Information, &out->cell_to_add[i].info))
             return false;
@@ -1524,11 +1528,13 @@ bool decode_f1ap_du_configuration_update(const F1AP_F1AP_PDU_t *pdu, f1ap_gnb_du
         out->cell_to_modify = calloc_or_fail(out->num_cells_to_modify, sizeof(*out->cell_to_modify));
         for (int i = 0; i < out->num_cells_to_modify && i < F1AP_MAX_NB_CELLS; i++) {
           /* Served Cells To Modify List item (count >= 1) */
-          F1AP_Served_Cells_To_Modify_Item_t *served_cells_item =
-              &((F1AP_Served_Cells_To_Modify_ItemIEs_t *)ie->value.choice.Served_Cells_To_Modify_List.list.array[i])
-                   ->value.choice.Served_Cells_To_Modify_Item;
+          const F1AP_Served_Cells_To_Modify_ItemIEs_t *itie =
+              (F1AP_Served_Cells_To_Modify_ItemIEs_t *)ie->value.choice.Served_Cells_To_Modify_List.list.array[i];
+          _EQ_CHECK_LONG(itie->id, F1AP_ProtocolIE_ID_id_Served_Cells_To_Modify_Item);
+          _EQ_CHECK_INT(itie->value.present, F1AP_Served_Cells_To_Modify_ItemIEs__value_PR_Served_Cells_To_Modify_Item);
+          const F1AP_Served_Cells_To_Modify_Item_t *served_cells_item = &itie->value.choice.Served_Cells_To_Modify_Item;
           /* Old NR CGI (M) */
-          F1AP_NRCGI_t *oldNRCGI = &served_cells_item->oldNRCGI;
+          const F1AP_NRCGI_t *oldNRCGI = &served_cells_item->oldNRCGI;
           plmn_id_t *old_plmn = &out->cell_to_modify[i].old_plmn;
           PLMNID_TO_MCC_MNC(&oldNRCGI->pLMN_Identity, old_plmn->mcc, old_plmn->mnc, old_plmn->mnc_digit_length);
           /* Old NR CGI Cell ID */
@@ -1549,10 +1555,12 @@ bool decode_f1ap_du_configuration_update(const F1AP_F1AP_PDU_t *pdu, f1ap_gnb_du
         AssertError(out->num_cells_to_delete > 0, return false, "at least 1 cell to delete shall to be present");
         out->cell_to_delete = calloc_or_fail(out->num_cells_to_delete, sizeof(*out->cell_to_delete));
         for (int i = 0; i < out->num_cells_to_delete && i < F1AP_MAX_NB_CELLS; i++) {
-          F1AP_Served_Cells_To_Delete_Item_t *served_cells_item =
-              &((F1AP_Served_Cells_To_Delete_ItemIEs_t *)ie->value.choice.Served_Cells_To_Delete_List.list.array[i])
-                   ->value.choice.Served_Cells_To_Delete_Item;
-          F1AP_NRCGI_t *oldNRCGI = &served_cells_item->oldNRCGI;
+          const F1AP_Served_Cells_To_Delete_ItemIEs_t *itie =
+              (F1AP_Served_Cells_To_Delete_ItemIEs_t *)ie->value.choice.Served_Cells_To_Delete_List.list.array[i];
+          _EQ_CHECK_LONG(itie->id, F1AP_ProtocolIE_ID_id_Served_Cells_To_Delete_Item);
+          _EQ_CHECK_INT(itie->value.present, F1AP_Served_Cells_To_Delete_ItemIEs__value_PR_Served_Cells_To_Delete_Item);
+          const F1AP_Served_Cells_To_Delete_Item_t *served_cells_item = &itie->value.choice.Served_Cells_To_Delete_Item;
+          const F1AP_NRCGI_t *oldNRCGI = &served_cells_item->oldNRCGI;
           plmn_id_t *plmn = &out->cell_to_delete[i].plmn;
           /* Old NR CGI (M) */
           PLMNID_TO_MCC_MNC(&(oldNRCGI->pLMN_Identity), plmn->mcc, plmn->mnc, plmn->mnc_digit_length);
@@ -1932,6 +1940,9 @@ bool decode_f1ap_cu_configuration_update_acknowledge(const F1AP_F1AP_PDU_t *pdu,
         for (int j = 0; j < out->num_cells_failed_to_be_activated && j < F1AP_MAX_NB_CELLS; j++) {
           const F1AP_Cells_Failed_to_be_Activated_List_ItemIEs_t *itemIE =
               (F1AP_Cells_Failed_to_be_Activated_List_ItemIEs_t *)cell_fail_list->list.array[j];
+          _EQ_CHECK_LONG(itemIE->id, F1AP_ProtocolIE_ID_id_Cells_Failed_to_be_Activated_List_Item);
+          _EQ_CHECK_INT(itemIE->value.present,
+                        F1AP_Cells_Failed_to_be_Activated_List_ItemIEs__value_PR_Cells_Failed_to_be_Activated_List_Item);
           const F1AP_Cells_Failed_to_be_Activated_List_Item_t *item = &itemIE->value.choice.Cells_Failed_to_be_Activated_List_Item;
           // NR CGI (M)
           plmn_id_t *plmn = &out->cells_failed_to_be_activated[j].plmn;
