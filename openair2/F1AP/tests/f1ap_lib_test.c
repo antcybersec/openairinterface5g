@@ -2546,6 +2546,15 @@ static void test_f1ap_malformed_messages(void)
     free_f1ap_paging(&msg);
     f1ap_msg_free(pdu);
   }
+  // DL UP TNL Information with a 1-byte transport layer address
+  {
+    F1AP_F1AP_PDU_t *pdu =
+        f1ap_decode_hex("4007002d000003001d001400001c000f2100039051ad3f1300000af000011000288005c03451de7100290005c0efa2b230");
+    f1ap_ue_context_mod_resp_t msg = {0};
+    AssertFatal(!decode_ue_context_mod_resp(pdu, &msg), "decoded non-IPv4 transport layer address\n");
+    free_ue_context_mod_resp(&msg);
+    f1ap_msg_free(pdu);
+  }
   // Served PLMN with only an NPN Support Information extension: no slices
   {
     F1AP_F1AP_PDU_t *pdu = f1ap_decode_hex(
