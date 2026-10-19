@@ -368,20 +368,22 @@ static int read_slice_info(const F1AP_ServedPLMNs_Item_t *plmn, nssai_t *nssai, 
     return 0;
 
   const F1AP_ProtocolExtensionContainer_11023P34_t *p = (F1AP_ProtocolExtensionContainer_11023P34_t *)plmn->iE_Extensions;
-  if (p->list.count == 0)
-    return 0;
-
-  const F1AP_ServedPLMNs_ItemExtIEs_t *splmn = p->list.array[0];
-  DevAssert(splmn->id == F1AP_ProtocolIE_ID_id_TAISliceSupportList);
-  DevAssert(splmn->extensionValue.present == F1AP_ServedPLMNs_ItemExtIEs__extensionValue_PR_SliceSupportList);
-  const F1AP_SliceSupportList_t *ssl = &splmn->extensionValue.choice.SliceSupportList;
-  AssertFatal(ssl->list.count <= max_nssai, "cannot handle more than 16 slices\n");
-  for (int s = 0; s < ssl->list.count; ++s) {
-    const F1AP_SliceSupportItem_t *sl = ssl->list.array[s];
-    nssai[s] = decode_nssai(&sl->sNSSAI);
+  for (int i = 0; i < p->list.count; ++i) {
+    // other extensions (e.g., NPN Support Information) may be present in any order
+    const F1AP_ServedPLMNs_ItemExtIEs_t *splmn = p->list.array[i];
+    if (splmn->id != F1AP_ProtocolIE_ID_id_TAISliceSupportList
+        || splmn->extensionValue.present != F1AP_ServedPLMNs_ItemExtIEs__extensionValue_PR_SliceSupportList)
+      continue;
+    const F1AP_SliceSupportList_t *ssl = &splmn->extensionValue.choice.SliceSupportList;
+    AssertFatal(ssl->list.count <= max_nssai, "cannot handle more than 16 slices\n");
+    for (int s = 0; s < ssl->list.count; ++s) {
+      const F1AP_SliceSupportItem_t *sl = ssl->list.array[s];
+      nssai[s] = decode_nssai(&sl->sNSSAI);
+    }
+    return ssl->list.count;
   }
 
-  return ssl->list.count;
+  return 0;
 }
 
 static F1AP_ProtocolExtensionContainer_11023P34_t *write_slice_info(int num_ssi, const nssai_t *nssai)
@@ -784,6 +786,24 @@ F1AP_F1AP_PDU_t *encode_f1ap_setup_request(const f1ap_setup_req_t *msg)
   return pdu;
 }
 
+static void decode_latest_rrc_version_enhanced(const F1AP_RRC_Version_t *rrc_version, uint8_t out[3])
+{
+  const F1AP_ProtocolExtensionContainer_11023P233_t *ext =
+      (F1AP_ProtocolExtensionContainer_11023P233_t *)rrc_version->iE_Extensions;
+  if (ext == NULL)
+    return;
+  for (int i = 0; i < ext->list.count; ++i) {
+    const F1AP_RRC_Version_ExtIEs_t *rrcext = ext->list.array[i];
+    if (rrcext->id != F1AP_ProtocolIE_ID_id_latest_RRC_Version_Enhanced
+        || rrcext->extensionValue.present != F1AP_RRC_Version_ExtIEs__extensionValue_PR_OCTET_STRING_SIZE_3_)
+      continue;
+    const OCTET_STRING_t *os = &rrcext->extensionValue.choice.OCTET_STRING_SIZE_3_;
+    DevAssert(os->size == 3); // SIZE(3), enforced by the ASN.1 decoder
+    memcpy(out, os->buf, os->size);
+    return;
+  }
+}
+
 /**
  * @brief F1AP Setup Request decoding
  */
@@ -852,17 +872,7 @@ bool decode_f1ap_setup_request(const F1AP_F1AP_PDU_t *pdu, f1ap_setup_req_t *out
         break;
       case F1AP_ProtocolIE_ID_id_GNB_DU_RRC_Version:
         /* gNB-DU RRC version (M) */
-        if (ie->value.choice.RRC_Version.iE_Extensions) {
-          F1AP_ProtocolExtensionContainer_11023P233_t *ext =
-              (F1AP_ProtocolExtensionContainer_11023P233_t *)ie->value.choice.RRC_Version.iE_Extensions;
-          if (ext->list.count > 0) {
-            F1AP_RRC_Version_ExtIEs_t *rrcext = ext->list.array[0];
-            OCTET_STRING_t *os = &rrcext->extensionValue.choice.OCTET_STRING_SIZE_3_;
-            DevAssert(os->size == sizeofArray(out->rrc_ver));
-            for (int i = 0; i < os->size; ++i)
-              out->rrc_ver[i] = os->buf[i];
-          }
-        }
+        decode_latest_rrc_version_enhanced(&ie->value.choice.RRC_Version, out->rrc_ver);
         break;
       default:
         AssertError(1 == 0, return false, "F1AP_ProtocolIE_ID_id %ld unknown\n", ie->id);
@@ -1104,17 +1114,8 @@ bool decode_f1ap_setup_response(const F1AP_F1AP_PDU_t *pdu, f1ap_setup_resp_t *o
       // gNB-CU RRC version (M)
       _EQ_CHECK_INT(ie->value.present, F1AP_F1SetupResponseIEs__value_PR_RRC_Version);
       // RRC Version: "This IE is not used in this release."
-      if (ie->value.choice.RRC_Version.iE_Extensions) {
-        F1AP_ProtocolExtensionContainer_11023P233_t *ext =
-            (F1AP_ProtocolExtensionContainer_11023P233_t *)ie->value.choice.RRC_Version.iE_Extensions;
-        if (ext->list.count > 0) {
-          F1AP_RRC_Version_ExtIEs_t *rrcext = ext->list.array[0];
-          OCTET_STRING_t *os = &rrcext->extensionValue.choice.OCTET_STRING_SIZE_3_;
-          for (int i = 0; i < sizeofArray(out->rrc_ver); i++)
-            out->rrc_ver[i] = os->buf[i];
-        }
-      }
-        break;
+      decode_latest_rrc_version_enhanced(&ie->value.choice.RRC_Version, out->rrc_ver);
+      break;
 
       case F1AP_ProtocolIE_ID_id_Cells_to_be_Activated_List: {
         // Cells to be Activated List (O)
