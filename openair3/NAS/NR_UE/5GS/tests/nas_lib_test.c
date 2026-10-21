@@ -304,6 +304,28 @@ static void test_service_accept_reject_truncated_ies(void)
   }
 }
 
+/** @brief Test decoding of the EAP message IE in Service Accept and Service Reject */
+static void test_service_accept_reject_eap(void)
+{
+  const uint8_t eap[] = {0x01, 0x02, 0x00, 0x04};
+
+  uint8_t sa[] = {0x78, 0x00, 0x04, 0x01, 0x02, 0x00, 0x04};
+  byte_array_t sa_ba = {.buf = sa, .len = sizeof(sa)};
+  fgs_service_accept_msg_t sa_dec = {0};
+  AssertFatal(decode_fgs_service_accept(&sa_dec, &sa_ba) == sizeof(sa), "decode_fgs_service_accept() failed\n");
+  AssertFatal(sa_dec.eap_msg.len == sizeof(eap) && memcmp(sa_dec.eap_msg.buf, eap, sizeof(eap)) == 0,
+              "Service Accept: EAP message mismatch\n");
+  free_fgs_service_accept(&sa_dec);
+
+  uint8_t sr[] = {0x03, 0x78, 0x00, 0x04, 0x01, 0x02, 0x00, 0x04};
+  byte_array_t sr_ba = {.buf = sr, .len = sizeof(sr)};
+  fgs_service_reject_msg_t sr_dec = {0};
+  AssertFatal(decode_fgs_service_reject(&sr_dec, &sr_ba) == sizeof(sr), "decode_fgs_service_reject() failed\n");
+  AssertFatal(sr_dec.eap_msg && sr_dec.eap_msg->len == sizeof(eap) && memcmp(sr_dec.eap_msg->buf, eap, sizeof(eap)) == 0,
+              "Service Reject: EAP message mismatch\n");
+  free_fgs_service_reject(&sr_dec);
+}
+
 /** @brief Test NAS Registration Reject enc/dec (plain AMF reject: cause only) */
 static void test_registration_reject(void)
 {
@@ -448,6 +470,7 @@ int main()
   test_service_accept();
   test_service_reject();
   test_service_accept_reject_truncated_ies();
+  test_service_accept_reject_eap();
   test_registration_reject();
   test_auth_failure();
   test_auth_reject();
