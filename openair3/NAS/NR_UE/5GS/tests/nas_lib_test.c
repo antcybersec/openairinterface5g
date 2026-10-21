@@ -87,18 +87,15 @@ static void test_regression_registration_accept(void)
   // Free dynamic allocated memory
   free_fgmm_registration_accept(&orig);
   free_fgmm_registration_accept(&decoded);
-}
 
-/** @brief Test that a Registration Accept with a 5G-GUTI longer than the message is rejected */
-static void test_registration_accept_truncated_guti(void)
-{
-  // the 5G-GUTI length is 11 octets, but the message ends after 4 of them
-  uint8_t msg[] = {0x01, 0x01, 0x77, 0x00, 0x0B, 0xF2, 0x00, 0xF1, 0x10};
-  registration_accept_msg decoded = {0};
-  byte_array_t ba = {.buf = msg, .len = sizeof(msg)};
-  int ret = decode_registration_accept(&decoded, ba);
-  AssertFatal(ret < 0, "decode_registration_accept() accepted a truncated 5G-GUTI\n");
-  free_fgmm_registration_accept(&decoded);
+  // The same message cut inside the 5G-GUTI IE (cn5g_msg[2] to [15]) is rejected
+  for (size_t len = 3; len < 16; len++) {
+    registration_accept_msg truncated = {0};
+    byte_array_t ba_truncated = {.buf = cn5g_msg, .len = len};
+    int ret = decode_registration_accept(&truncated, ba_truncated);
+    AssertFatal(ret < 0, "decode_registration_accept() accepted the message cut to %zu octets\n", len);
+    free_fgmm_registration_accept(&truncated);
+  }
 }
 
 /**
@@ -233,6 +230,28 @@ static void test_service_accept(void)
   AssertFatal(eq_service_accept(&orig, &dec), "test_service_accept() failed: original and decoded messages do not match\n");
   free_fgs_service_accept(&dec);
   free_fgs_service_accept(&orig);
+
+  // The same message cut inside the PDU session reactivation result error cause IE (expected_enc[8] to [12])
+  // or the T3448 value IE (expected_enc[13] to [15]) is rejected
+  const size_t truncated_len[] = {9, 10, 11, 12, 14, 15};
+  for (size_t i = 0; i < sizeofArray(truncated_len); i++) {
+    byte_array_t truncated = {.buf = expected_enc, .len = truncated_len[i]};
+    fgs_service_accept_msg_t dec_truncated = {0};
+    AssertFatal(decode_fgs_service_accept(&dec_truncated, &truncated) < 0,
+                "decode_fgs_service_accept() accepted the message cut to %zu octets\n",
+                truncated_len[i]);
+    free_fgs_service_accept(&dec_truncated);
+  }
+
+  // EAP message IE, which encode_fgs_service_accept() doesn't encode
+  const uint8_t eap[] = {0x01, 0x02, 0x00, 0x04};
+  uint8_t eap_enc[] = {IEI_EAPMSG, 0x00, 0x04, 0x01, 0x02, 0x00, 0x04};
+  byte_array_t eap_ba = {.buf = eap_enc, .len = sizeof(eap_enc)};
+  fgs_service_accept_msg_t dec_eap = {0};
+  AssertFatal(decode_fgs_service_accept(&dec_eap, &eap_ba) == sizeof(eap_enc), "decode_fgs_service_accept() failed\n");
+  AssertFatal(dec_eap.eap_msg.len == sizeof(eap) && memcmp(dec_eap.eap_msg.buf, eap, sizeof(eap)) == 0,
+              "Service Accept: EAP message mismatch\n");
+  free_fgs_service_accept(&dec_eap);
 }
 
 /** @brief Test NAS Service Reject enc/dec */
@@ -275,55 +294,36 @@ static void test_service_reject(void)
   AssertFatal(eq_service_reject(&orig, &dec), "test_service_reject() failed: original and decoded messages do not match\n");
   free_fgs_service_reject(&dec);
   free_fgs_service_reject(&orig);
-}
 
-/** @brief Test that Service Accept and Service Reject IEs longer than the message are rejected */
-static void test_service_accept_reject_truncated_ies(void)
-{
-  // T3448 value without its value octet
-  uint8_t sa_t3448[] = {0x6B, 0x01};
-  // PDU session reactivation result error cause: 4 octets announced, 2 present
-  uint8_t sa_error_cause[] = {0x72, 0x00, 0x04, 0x01, 0x03};
-  const byte_array_t sa_msgs[] = {{.buf = sa_t3448, .len = sizeof(sa_t3448)},
-                                  {.buf = sa_error_cause, .len = sizeof(sa_error_cause)}};
-  for (size_t i = 0; i < sizeofArray(sa_msgs); i++) {
-    fgs_service_accept_msg_t dec = {0};
-    AssertFatal(decode_fgs_service_accept(&dec, &sa_msgs[i]) < 0, "decode_fgs_service_accept() accepted message %zu\n", i);
-    free_fgs_service_accept(&dec);
+  // The same message cut inside the T3346 value IE (expected_enc[5] to [7]) or the T3448 value IE (expected_enc[8] to [10])
+  // is rejected
+  const size_t truncated_len[] = {6, 7, 9, 10};
+  for (size_t i = 0; i < sizeofArray(truncated_len); i++) {
+    byte_array_t truncated = {.buf = expected_enc, .len = truncated_len[i]};
+    fgs_service_reject_msg_t dec_truncated = {0};
+    AssertFatal(decode_fgs_service_reject(&dec_truncated, &truncated) < 0,
+                "decode_fgs_service_reject() accepted the message cut to %zu octets\n",
+                truncated_len[i]);
+    free_fgs_service_reject(&dec_truncated);
   }
 
-  // 5GMM cause, then T3346 value without its value octet
-  uint8_t sr_t3346[] = {0x03, 0x5F, 0x01};
-  // 5GMM cause, then CAG information list: 16 octets announced, 1 present
-  uint8_t sr_cag[] = {0x03, 0x75, 0x00, 0x10, 0x01};
-  const byte_array_t sr_msgs[] = {{.buf = sr_t3346, .len = sizeof(sr_t3346)}, {.buf = sr_cag, .len = sizeof(sr_cag)}};
-  for (size_t i = 0; i < sizeofArray(sr_msgs); i++) {
-    fgs_service_reject_msg_t dec = {0};
-    AssertFatal(decode_fgs_service_reject(&dec, &sr_msgs[i]) < 0, "decode_fgs_service_reject() accepted message %zu\n", i);
-    free_fgs_service_reject(&dec);
-  }
-}
+  // 5GMM cause, then a CAG information list IE, which encode_fgs_service_reject() doesn't encode: 16 octets announced, 1 present
+  uint8_t cag_enc[] = {Illegal_UE, IEI_CAG_INFO_LIST, 0x00, 0x10, 0x01};
+  byte_array_t cag_ba = {.buf = cag_enc, .len = sizeof(cag_enc)};
+  fgs_service_reject_msg_t dec_cag = {0};
+  AssertFatal(decode_fgs_service_reject(&dec_cag, &cag_ba) < 0, "decode_fgs_service_reject() accepted a truncated CAG list\n");
+  free_fgs_service_reject(&dec_cag);
 
-/** @brief Test decoding of the EAP message IE in Service Accept and Service Reject */
-static void test_service_accept_reject_eap(void)
-{
+  // 5GMM cause, then an EAP message IE
   const uint8_t eap[] = {0x01, 0x02, 0x00, 0x04};
-
-  uint8_t sa[] = {0x78, 0x00, 0x04, 0x01, 0x02, 0x00, 0x04};
-  byte_array_t sa_ba = {.buf = sa, .len = sizeof(sa)};
-  fgs_service_accept_msg_t sa_dec = {0};
-  AssertFatal(decode_fgs_service_accept(&sa_dec, &sa_ba) == sizeof(sa), "decode_fgs_service_accept() failed\n");
-  AssertFatal(sa_dec.eap_msg.len == sizeof(eap) && memcmp(sa_dec.eap_msg.buf, eap, sizeof(eap)) == 0,
-              "Service Accept: EAP message mismatch\n");
-  free_fgs_service_accept(&sa_dec);
-
-  uint8_t sr[] = {0x03, 0x78, 0x00, 0x04, 0x01, 0x02, 0x00, 0x04};
-  byte_array_t sr_ba = {.buf = sr, .len = sizeof(sr)};
-  fgs_service_reject_msg_t sr_dec = {0};
-  AssertFatal(decode_fgs_service_reject(&sr_dec, &sr_ba) == sizeof(sr), "decode_fgs_service_reject() failed\n");
-  AssertFatal(sr_dec.eap_msg && sr_dec.eap_msg->len == sizeof(eap) && memcmp(sr_dec.eap_msg->buf, eap, sizeof(eap)) == 0,
+  uint8_t eap_enc[] = {Illegal_UE, IEI_EAPMSG, 0x00, 0x04, 0x01, 0x02, 0x00, 0x04};
+  byte_array_t eap_ba = {.buf = eap_enc, .len = sizeof(eap_enc)};
+  fgs_service_reject_msg_t dec_eap = {0};
+  AssertFatal(decode_fgs_service_reject(&dec_eap, &eap_ba) == sizeof(eap_enc), "decode_fgs_service_reject() failed\n");
+  AssertFatal(dec_eap.cause == Illegal_UE, "Service Reject: cause mismatch\n");
+  AssertFatal(dec_eap.eap_msg && dec_eap.eap_msg->len == sizeof(eap) && memcmp(dec_eap.eap_msg->buf, eap, sizeof(eap)) == 0,
               "Service Reject: EAP message mismatch\n");
-  free_fgs_service_reject(&sr_dec);
+  free_fgs_service_reject(&dec_eap);
 }
 
 /** @brief Test NAS Registration Reject enc/dec (plain AMF reject: cause only) */
@@ -465,12 +465,9 @@ int main()
   set_log(NAS, OAILOG_DEBUG);
   // Tests list
   test_regression_registration_accept();
-  test_registration_accept_truncated_guti();
   test_service_request();
   test_service_accept();
   test_service_reject();
-  test_service_accept_reject_truncated_ies();
-  test_service_accept_reject_eap();
   test_registration_reject();
   test_auth_failure();
   test_auth_reject();
