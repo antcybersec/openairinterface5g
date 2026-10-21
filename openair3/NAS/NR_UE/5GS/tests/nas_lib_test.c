@@ -277,6 +277,33 @@ static void test_service_reject(void)
   free_fgs_service_reject(&orig);
 }
 
+/** @brief Test that Service Accept and Service Reject IEs longer than the message are rejected */
+static void test_service_accept_reject_truncated_ies(void)
+{
+  // T3448 value without its value octet
+  uint8_t sa_t3448[] = {0x6B, 0x01};
+  // PDU session reactivation result error cause: 4 octets announced, 2 present
+  uint8_t sa_error_cause[] = {0x72, 0x00, 0x04, 0x01, 0x03};
+  const byte_array_t sa_msgs[] = {{.buf = sa_t3448, .len = sizeof(sa_t3448)},
+                                  {.buf = sa_error_cause, .len = sizeof(sa_error_cause)}};
+  for (size_t i = 0; i < sizeofArray(sa_msgs); i++) {
+    fgs_service_accept_msg_t dec = {0};
+    AssertFatal(decode_fgs_service_accept(&dec, &sa_msgs[i]) < 0, "decode_fgs_service_accept() accepted message %zu\n", i);
+    free_fgs_service_accept(&dec);
+  }
+
+  // 5GMM cause, then T3346 value without its value octet
+  uint8_t sr_t3346[] = {0x03, 0x5F, 0x01};
+  // 5GMM cause, then CAG information list: 16 octets announced, 1 present
+  uint8_t sr_cag[] = {0x03, 0x75, 0x00, 0x10, 0x01};
+  const byte_array_t sr_msgs[] = {{.buf = sr_t3346, .len = sizeof(sr_t3346)}, {.buf = sr_cag, .len = sizeof(sr_cag)}};
+  for (size_t i = 0; i < sizeofArray(sr_msgs); i++) {
+    fgs_service_reject_msg_t dec = {0};
+    AssertFatal(decode_fgs_service_reject(&dec, &sr_msgs[i]) < 0, "decode_fgs_service_reject() accepted message %zu\n", i);
+    free_fgs_service_reject(&dec);
+  }
+}
+
 /** @brief Test NAS Registration Reject enc/dec (plain AMF reject: cause only) */
 static void test_registration_reject(void)
 {
@@ -420,6 +447,7 @@ int main()
   test_service_request();
   test_service_accept();
   test_service_reject();
+  test_service_accept_reject_truncated_ies();
   test_registration_reject();
   test_auth_failure();
   test_auth_reject();
