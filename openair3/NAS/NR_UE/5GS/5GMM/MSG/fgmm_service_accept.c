@@ -121,9 +121,13 @@ int decode_fgs_service_accept(fgs_service_accept_msg_t *msg, const byte_array_t 
         DECODE_NAS_IE(ba, decode_gprs_timer_ie(msg->t3448, &ba), decoded);
         break;
 
-      case IEI_EAPMSG:
-        DECODE_NAS_IE(ba, decode_eap_msg_ie(&msg->eap_msg, &ba), decoded);
-        break;
+      case IEI_EAPMSG: {
+        // decode_eap_msg_ie() copies the contents into eap.buf
+        uint8_t eap_buf[MAX_EAP_CONTENTS_LEN];
+        byte_array_t eap = {.buf = eap_buf};
+        DECODE_NAS_IE(ba, decode_eap_msg_ie(&eap, &ba), decoded);
+        msg->eap_msg = create_byte_array(eap.len, eap.buf);
+      } break;
 
       default:
         PRINT_ERROR("Unkwown or invalid IEI %d\n", iei);
@@ -170,4 +174,5 @@ bool eq_service_accept(const fgs_service_accept_msg_t *a, const fgs_service_acce
 void free_fgs_service_accept(fgs_service_accept_msg_t *msg)
 {
   free(msg->t3448);
+  free_byte_array(msg->eap_msg);
 }

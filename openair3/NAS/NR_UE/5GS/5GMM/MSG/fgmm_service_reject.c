@@ -87,9 +87,14 @@ int decode_fgs_service_reject(fgs_service_reject_msg_t *msg, const byte_array_t 
         DECODE_NAS_IE(ba, decode_gprs_timer_ie(msg->t3446, (const byte_array_t *)&ba), decoded);
         break;
 
-      case IEI_EAPMSG:
-        DECODE_NAS_IE(ba, decode_eap_msg_ie(msg->eap_msg, &ba), decoded);
-        break;
+      case IEI_EAPMSG: {
+        // decode_eap_msg_ie() copies the contents into eap.buf
+        uint8_t eap_buf[MAX_EAP_CONTENTS_LEN];
+        byte_array_t eap = {.buf = eap_buf};
+        DECODE_NAS_IE(ba, decode_eap_msg_ie(&eap, &ba), decoded);
+        msg->eap_msg = calloc_or_fail(1, sizeof(*msg->eap_msg));
+        *msg->eap_msg = create_byte_array(eap.len, eap.buf);
+      } break;
 
       case IEI_CAG_INFO_LIST: {
         if (buffer->len - decoded < 2) {
@@ -148,4 +153,8 @@ void free_fgs_service_reject(fgs_service_reject_msg_t *msg)
 {
   free(msg->t3446);
   free(msg->t3448);
+  if (msg->eap_msg) {
+    free_byte_array(*msg->eap_msg);
+    free(msg->eap_msg);
+  }
 }
