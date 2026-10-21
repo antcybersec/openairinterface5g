@@ -89,6 +89,18 @@ static void test_regression_registration_accept(void)
   free_fgmm_registration_accept(&decoded);
 }
 
+/** @brief Test that a Registration Accept with a 5G-GUTI longer than the message is rejected */
+static void test_registration_accept_truncated_guti(void)
+{
+  // the 5G-GUTI length is 11 octets, but the message ends after 4 of them
+  uint8_t msg[] = {0x01, 0x01, 0x77, 0x00, 0x0B, 0xF2, 0x00, 0xF1, 0x10};
+  registration_accept_msg decoded = {0};
+  byte_array_t ba = {.buf = msg, .len = sizeof(msg)};
+  int ret = decode_registration_accept(&decoded, ba);
+  AssertFatal(ret < 0, "decode_registration_accept() accepted a truncated 5G-GUTI\n");
+  free_fgmm_registration_accept(&decoded);
+}
+
 /**
  * @brief Test NAS Service Request enc/dec
  */
@@ -404,6 +416,7 @@ int main()
   set_log(NAS, OAILOG_DEBUG);
   // Tests list
   test_regression_registration_accept();
+  test_registration_accept_truncated_guti();
   test_service_request();
   test_service_accept();
   test_service_reject();
